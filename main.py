@@ -1,10 +1,12 @@
 import time
 import json
 import requests
-import winreg
 import threading
 import keyboard
 import atexit
+
+import tf2
+
 from PyQt5.QtWidgets import *
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
@@ -49,7 +51,6 @@ class TailFileThread(threading.Thread):
 
                 for i in range(7):
                     label_dict['line' + str(i)].setText(message_queue[i])
-
 
 
 class KeyListenerThread(threading.Thread):
@@ -130,60 +131,42 @@ def analyze_comment(comment):
         return 0
 
 
-# Locate TF2 install
-steam_path = "Steam install could not be found"
-try:
-    key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Software\\Valve\\Steam")
-    steam_path = winreg.QueryValueEx(key, "SteamPath")[0]
-except FileNotFoundError:
-    print(steam_path)
-    exit()
-console_path = steam_path + '/steamapps/common/Team Fortress 2/tf/console.log'
-autoexec_path = steam_path + '/steamapps/common/Team Fortress 2/tf/cfg/autoexec.cfg'
+if __name__ == "__main__":
+    # Do some preliminary operations on the game itself
+    console_path, autoexec_path = tf2.locate_install()
+    tf2.disable_tf2_chat(autoexec_path)
 
-# Disable text chat
-line_found = False
-with open(autoexec_path, 'r') as f:
-    for line in f:
-        if line == "hud_saytext_time 0":
-            line_found = True
-            break
-f.close()
-if not line_found:
-    with open(autoexec_path, 'a') as f:
-        f.write("\nhud_saytext_time 0")
-    f.close()
+    # Load items from the config file
+    config = json.load(open('config.json', 'r'))
+    api_key = config['api_key']
+    swears_whitelist = config['whitelist']
 
-# Prepare data
-swears_whitelist = {
-                    'fuck', 'fuk',
-                    'shit',
-                    'damn', 'dam', 'goddam'
-                    }
-chars_to_match = [' : ']
-api_key = 'hidden'
-open(console_path, 'w').close()
-message_queue = ['' for i in range(7)]
+    # Clear the console log,
+    # define the string that identifies player comments,
+    # create the message queue
+    open(console_path, 'w').close()
+    chars_to_match = [' : ']
+    message_queue = ['' for i in range(7)]
 
-app = QApplication([])
-window = CustomWindow()
-window.location_on_screen()
-window.setWindowFlags(Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint)
-window.setAttribute(Qt.WA_TranslucentBackground)
+    app = QApplication([])
+    window = CustomWindow()
+    window.location_on_screen()
+    window.setWindowFlags(Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint)
+    window.setAttribute(Qt.WA_TranslucentBackground)
 
-layout = QVBoxLayout()
+    layout = QVBoxLayout()
 
-label_dict = {}
-for i in range(7):
-    label_dict['line'+str(i)] = CustomLabel()
-    layout.addWidget(label_dict['line'+str(i)])
+    label_dict = {}
+    for i in range(7):
+        label_dict['line'+str(i)] = CustomLabel()
+        layout.addWidget(label_dict['line'+str(i)])
 
-window.setLayout(layout)
-window.show()
+    window.setLayout(layout)
+    window.show()
 
-TailFileThread(console_path, chars_to_match).start()
-KeyListenerThread().start()
+    TailFileThread(console_path, chars_to_match).start()
+    KeyListenerThread().start()
 
-atexit.register(handle_exit)
-app.exec()
+    atexit.register(handle_exit)
+    app.exec()
 
