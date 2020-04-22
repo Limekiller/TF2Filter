@@ -6,4 +6,5 @@ The following launch options must be specified:
 
 
 `-condebug -sw -noborder -novid -h 1080 -w 1920`
+
 Modify -h and -w to match your resolution.
