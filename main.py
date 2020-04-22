@@ -4,6 +4,7 @@ import requests
 import threading
 import keyboard
 import atexit
+import psutil
 
 import tf2
 
@@ -52,24 +53,50 @@ class TailFileThread(threading.Thread):
                 for i in range(7):
                     label_dict['line' + str(i)].setText(message_queue[i])
 
+                window.setWindowOpacity(1)
+                time.sleep(2)
+                window.setWindowOpacity(0)
+                
+            time.sleep(0.01)
+
 
 class KeyListenerThread(threading.Thread):
     def __init__(self):
         threading.Thread.__init__(self)
 
     def run(self):
+        global tf2_is_running
         visible = True
         while True:
-            if keyboard.is_pressed('y'):
-                if visible:
-                    visible = False
-                    window.setWindowOpacity(0)
-            elif keyboard.is_pressed('esc'):
-                visible = True
-                window.setWindowOpacity(1)
-            elif keyboard.is_pressed('enter'):
-                visible = True
-                window.setWindowOpacity(1)
+            if tf2_is_running:
+                if keyboard.is_pressed('y'):
+                    if visible:
+                        visible = False
+                        window.setWindowOpacity(0)
+                elif keyboard.is_pressed('esc'):
+                    visible = True
+                    window.setWindowOpacity(1)
+                elif keyboard.is_pressed('enter'):
+                    visible = True
+                    window.setWindowOpacity(1)
+            time.sleep(0.01)
+
+
+class MonitorProcessesThread(threading.Thread):
+    def __init__(self):
+        threading.Thread.__init__(self)
+
+    def run(self):
+        global tf2_is_running
+        while True:
+            if "hl2.exe" in (p.name() for p in psutil.process_iter()):
+                if not tf2_is_running:
+                    window.setWindowOpacity(1)
+                tf2_is_running = True
+            else:
+                tf2_is_running = False
+                window.setWindowOpacity(0)
+            time.sleep(1)
 
 
 class CustomWindow(QWidget):
@@ -132,6 +159,8 @@ def analyze_comment(comment):
 
 
 if __name__ == "__main__":
+    tf2_is_running = False
+
     # Do some preliminary operations on the game itself
     console_path, autoexec_path = tf2.locate_install()
     tf2.disable_tf2_chat(autoexec_path)
@@ -141,9 +170,6 @@ if __name__ == "__main__":
     api_key = config['api_key']
     swears_whitelist = config['whitelist']
 
-    # Clear the console log,
-    # define the string that identifies player comments,
-    # create the message queue
     open(console_path, 'w').close()
     chars_to_match = [' : ']
     message_queue = ['' for i in range(7)]
@@ -166,6 +192,7 @@ if __name__ == "__main__":
 
     TailFileThread(console_path, chars_to_match).start()
     KeyListenerThread().start()
+    MonitorProcessesThread().start()
 
     atexit.register(handle_exit)
     app.exec()
