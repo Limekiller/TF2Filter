@@ -1,0 +1,9 @@
+{
+  "api_key" : "api_key_here",
+  "whitelist" : [
+    "fuck", "fuk",
+    "shit",
+    "damn", "dam", "damnit", "dammit",
+    "stupid"
+  ]
+}
