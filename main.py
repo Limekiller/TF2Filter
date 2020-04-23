@@ -3,8 +3,8 @@ import json
 import requests
 import threading
 import keyboard
-import atexit
 import psutil
+import sys
 
 import tf2
 
@@ -21,8 +21,12 @@ Created by Bryce Yoder, 2020
 
 
 class TailFileThread(threading.Thread):
+    """
+    This thread monitors the console.log file and calls the corresponding functions when actions occur.
+    Takes a path to a log file and a list of words to look for.
+    """
     def __init__(self, path, chars):
-        threading.Thread.__init__(self)
+        threading.Thread.__init__(self, daemon=True)
         self.path = path
         self.chars = chars
 
@@ -30,70 +34,74 @@ class TailFileThread(threading.Thread):
         while True:
             # Watch file for new text chat lines
             for hit_word, hit_sentence in watch(self.path, self.chars):
-                # Parse the exact string from the file
-
-                original_chat_string = hit_sentence[hit_sentence.index(':') + 2:]
-                username = hit_sentence[:hit_sentence.index(':') - 1]
-                print(original_chat_string)
-                print(username)
-
-                real_chat_string_list = original_chat_string.split()
-                real_chat_string = ' '.join(
-                    [word for word in real_chat_string_list if word.lower() not in swears_whitelist])
-                toxicity_rating = analyze_comment(real_chat_string)
-
-                if message_queue:
-                    message_queue.pop(0)
-
-                if toxicity_rating < .91:
-                    message_queue.append(username + ': ' + original_chat_string)
+                if self.chars == [' : ']:
+                    handle_new_comment(hit_sentence)
                 else:
-                    message_queue.append("Message from " + username + " filtered for possible hate speech")
-
-                for i in range(7):
-                    label_dict['line' + str(i)].setText(message_queue[i])
-
-                window.setWindowOpacity(1)
-                time.sleep(2)
-                window.setWindowOpacity(0)
-                
-            time.sleep(0.01)
+                    handle_server_exit()
+                time.sleep(0.01)
 
 
-class KeyListenerThread(threading.Thread):
+class ShowCommentTimerThread(threading.Thread):
+    """
+    A new instance of this thread is created whenever a new comment comes in. It waits 10 seconds and then hides
+    the chat window if the last message was sent more than 10 seconds ago.
+    """
     def __init__(self):
         threading.Thread.__init__(self)
 
     def run(self):
+        global last_comment_received_time
+        time.sleep(10)
+        if time.clock() - last_comment_received_time > 10:
+            window.setWindowOpacity(0)
+
+
+class KeyListenerThread(threading.Thread):
+    """
+    This thread listens for key presses and manipulates the chat window accordingly. Right now, it simply hides
+    the chat if y or u is pressed.
+    """
+    def __init__(self):
+        threading.Thread.__init__(self, daemon=True)
+
+    def run(self):
         global tf2_is_running
-        visible = True
         while True:
             if tf2_is_running:
-                if keyboard.is_pressed('y'):
-                    if visible:
-                        visible = False
-                        window.setWindowOpacity(0)
-                elif keyboard.is_pressed('esc'):
-                    visible = True
-                    window.setWindowOpacity(1)
-                elif keyboard.is_pressed('enter'):
-                    visible = True
-                    window.setWindowOpacity(1)
+                if keyboard.is_pressed('y') or keyboard.is_pressed('u'):
+                    window.setWindowOpacity(0)
             time.sleep(0.01)
 
 
 class MonitorProcessesThread(threading.Thread):
-    def __init__(self):
-        threading.Thread.__init__(self)
+    """
+    This thread watches all of the computers processes to determine if the game has been opened.
+    Before the game is opened, the chat window is always hidden. Once the game has been opened, normal behavior
+    begins. When the game is then closed, the program exits.
+    """
+    def __init__(self, autoexec):
+        threading.Thread.__init__(self, daemon=True)
+        self.autoexec = autoexec
 
     def run(self):
         global tf2_is_running
+        global tf2_has_run
         while True:
             if "hl2.exe" in (p.name() for p in psutil.process_iter()):
                 if not tf2_is_running:
                     window.setWindowOpacity(1)
                 tf2_is_running = True
+                tf2_has_run = True
             else:
+                if tf2_has_run:
+                    with open(self.autoexec, "r") as f:
+                        lines = f.readlines()
+                    with open(self.autoexec, "w") as f:
+                        for line in lines:
+                            if line.strip("\n") != "hud_saytext_time 0":
+                                f.write(line)
+                    window.close()
+
                 tf2_is_running = False
                 window.setWindowOpacity(0)
             time.sleep(1)
@@ -119,11 +127,42 @@ class CustomLabel(QLabel):
         effect.setColor(QColor("#000"))
         effect.setOffset(1, 1)
         self.setGraphicsEffect(effect)
-        self.setStyleSheet('color: white; font-size: 15px; padding-top: 5px; padding-bottom: 5px;')
+        self.setStyleSheet('color: white; font-size: 15px;')
 
 
-def handle_exit():
-    print("ye")
+def handle_new_comment(hit_sentence):
+    global last_comment_received_time
+
+    original_chat_string = hit_sentence[hit_sentence.index(':') + 2:]
+    username = hit_sentence[:hit_sentence.index(':') - 1]
+    print(original_chat_string)
+    print(username)
+
+    real_chat_string_list = original_chat_string.split()
+    real_chat_string = ' '.join(
+        [word for word in real_chat_string_list if word.lower() not in swears_whitelist])
+    toxicity_rating = analyze_comment(real_chat_string)
+
+    if message_queue:
+        message_queue.pop(0)
+
+    if toxicity_rating < .91:
+        message_queue.append(username + ': ' + original_chat_string)
+    else:
+        message_queue.append("Message from " + username + " filtered for possible hate speech\n")
+
+    for i in range(7):
+        label_dict['line' + str(i)].setText(message_queue[i])
+
+    last_comment_received_time = time.clock()
+
+    window.setWindowOpacity(1)
+    ShowCommentTimerThread().start()
+
+
+def handle_server_exit():
+    for i in range(7):
+        label_dict['line' + str(i)].setText('')
 
 
 def watch(fn, words):
@@ -131,7 +170,6 @@ def watch(fn, words):
     fp = open(fn, 'r', errors='replace')
     while True:
         new = fp.readline()
-
         if new:
             for word in words:
                 if word in new:
@@ -160,6 +198,8 @@ def analyze_comment(comment):
 
 if __name__ == "__main__":
     tf2_is_running = False
+    tf2_has_run = False
+    last_comment_received_time = time.clock()
 
     # Do some preliminary operations on the game itself
     console_path, autoexec_path = tf2.locate_install()
@@ -171,7 +211,6 @@ if __name__ == "__main__":
     swears_whitelist = config['whitelist']
 
     open(console_path, 'w').close()
-    chars_to_match = [' : ']
     message_queue = ['' for i in range(7)]
 
     app = QApplication([])
@@ -190,10 +229,10 @@ if __name__ == "__main__":
     window.setLayout(layout)
     window.show()
 
-    TailFileThread(console_path, chars_to_match).start()
+    TailFileThread(console_path, [' : ']).start()
+    TailFileThread(console_path, ['Lobby destroyed']).start()
     KeyListenerThread().start()
-    MonitorProcessesThread().start()
+    MonitorProcessesThread(autoexec_path).start()
 
-    atexit.register(handle_exit)
     app.exec()
-
+    sys.exit()
