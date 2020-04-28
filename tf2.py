@@ -1,5 +1,9 @@
 import winreg
 
+"""
+This file handles any 'interactions' with the actual game.
+"""
+
 
 def locate_install():
     """

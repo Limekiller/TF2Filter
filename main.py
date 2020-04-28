@@ -7,10 +7,8 @@ import psutil
 import sys
 
 import tf2
-
-from PyQt5.QtWidgets import *
-from PyQt5.QtCore import *
-from PyQt5.QtGui import *
+import qt
+import teams
 
 """
 This program monitors a Source Engine console log file and feeds voice chat lines into Google's Perspective API.
@@ -34,8 +32,10 @@ class TailFileThread(threading.Thread):
         while True:
             # Watch file for new text chat lines
             for hit_word, hit_sentence in watch(self.path, self.chars):
-                if self.chars == [' : ']:
+                if hit_word == ' : ':
                     handle_new_comment(hit_sentence)
+                elif hit_word == ' killed ':
+                    teams.handle_player_interaction(hit_sentence)
                 else:
                     handle_server_exit()
                 time.sleep(0.01)
@@ -66,10 +66,14 @@ class KeyListenerThread(threading.Thread):
 
     def run(self):
         global tf2_is_running
+        global chat_is_open
         while True:
             if tf2_is_running:
                 if keyboard.is_pressed('y') or keyboard.is_pressed('u'):
+                    chat_is_open = True
                     window.setWindowOpacity(0)
+                elif keyboard.is_pressed('enter') or keyboard.is_pressed('esc'):
+                    chat_is_open = False
             time.sleep(0.01)
 
 
@@ -107,31 +111,9 @@ class MonitorProcessesThread(threading.Thread):
             time.sleep(1)
 
 
-class CustomWindow(QWidget):
-    def __init__(self):
-        super().__init__()
-        self.setFixedSize(QDesktopWidget().screenGeometry().width() * 0.328125,
-                          QDesktopWidget().screenGeometry().height() * 0.25)
-        self.frame = QFrame(self)
-
-    def location_on_screen(self):
-        self.move(QDesktopWidget().screenGeometry().width() * 0.012,
-                  QDesktopWidget().screenGeometry().height() * 0.574)
-
-
-class CustomLabel(QLabel):
-    def __init__(self):
-        super().__init__()
-        effect = QGraphicsDropShadowEffect(self)
-        effect.setBlurRadius(5)
-        effect.setColor(QColor("#000"))
-        effect.setOffset(1, 1)
-        self.setGraphicsEffect(effect)
-        self.setStyleSheet('color: white; font-size: 15px;')
-
-
 def handle_new_comment(hit_sentence):
     global last_comment_received_time
+    global chat_is_open
 
     original_chat_string = hit_sentence[hit_sentence.index(':') + 2:]
     username = hit_sentence[:hit_sentence.index(':') - 1]
@@ -147,22 +129,38 @@ def handle_new_comment(hit_sentence):
         message_queue.pop(0)
 
     if toxicity_rating < .91:
-        message_queue.append(username + ': ' + original_chat_string)
+        message_queue.append([username, original_chat_string])
     else:
-        message_queue.append("Message from " + username + " filtered for possible hate speech\n")
+        message_queue.append([None, "Message from " + username + " filtered for possible hate speech\n"])
 
     for i in range(7):
-        label_dict['line' + str(i)].setText(message_queue[i])
+        try:
+            label_dict['line' + str(i)][0].setText(message_queue[i][0]+':\n')
+        except (TypeError):
+            label_dict['line' + str(i)][0].setText('\n')
+        label_dict['line' + str(i)][0].recalculate_width()
+        try:
+            if teams.teams_dict[message_queue[i][0]] == 'red':
+                label_dict['line' + str(i)][0].set_color('#d95858')
+            else:
+                label_dict['line' + str(i)][0].set_color('#5884d9')
+        except KeyError:
+            pass
+
+        label_dict['line' + str(i)][1].setText(message_queue[i][1])
+        label_dict['line' + str(i)][1].recalculate_width()
 
     last_comment_received_time = time.clock()
 
-    window.setWindowOpacity(1)
-    ShowCommentTimerThread().start()
+    if not chat_is_open:
+        window.setWindowOpacity(1)
+        ShowCommentTimerThread().start()
 
 
 def handle_server_exit():
     for i in range(7):
-        label_dict['line' + str(i)].setText('')
+        label_dict['line' + str(i)][0].setText('')
+        label_dict['line' + str(i)][1].setText('')
 
 
 def watch(fn, words):
@@ -199,6 +197,7 @@ def analyze_comment(comment):
 if __name__ == "__main__":
     tf2_is_running = False
     tf2_has_run = False
+    chat_is_open = False
     last_comment_received_time = time.clock()
 
     # Do some preliminary operations on the game itself
@@ -211,26 +210,11 @@ if __name__ == "__main__":
     swears_whitelist = config['whitelist']
 
     open(console_path, 'w').close()
-    message_queue = ['' for i in range(7)]
+    message_queue = [['', ''] for i in range(7)]
 
-    app = QApplication([])
-    window = CustomWindow()
-    window.location_on_screen()
-    window.setWindowFlags(Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint)
-    window.setAttribute(Qt.WA_TranslucentBackground)
+    window, app, label_dict = qt.init_qt()
 
-    layout = QVBoxLayout()
-
-    label_dict = {}
-    for i in range(7):
-        label_dict['line'+str(i)] = CustomLabel()
-        layout.addWidget(label_dict['line'+str(i)])
-
-    window.setLayout(layout)
-    window.show()
-
-    TailFileThread(console_path, [' : ']).start()
-    TailFileThread(console_path, ['Lobby destroyed']).start()
+    TailFileThread(console_path, [' : ', 'Lobby destroyed', ' killed ']).start()
     KeyListenerThread().start()
     MonitorProcessesThread(autoexec_path).start()
 
