@@ -10,7 +10,6 @@ class CustomWindow(QWidget):
                           QDesktopWidget().screenGeometry().height() * 0.25)
         self.frame = QFrame(self)
 
-
     def location_on_screen(self):
         self.move(QDesktopWidget().screenGeometry().width() * 0.012,
                   QDesktopWidget().screenGeometry().height() * 0.574)

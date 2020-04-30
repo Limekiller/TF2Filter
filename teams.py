@@ -1,6 +1,13 @@
 
 
 def check_teams(kill_relationship):
+    """
+    This function takes a game interaction ("Bobby killed Limekiller with shotgun"),
+    and recursively updates teams for all connected users if one of the players in the relationship
+    already has a defined team
+    :param kill_relationship:
+    :return:
+    """
 
     if kill_relationship[0] in teams_dict:
         if teams_dict[kill_relationship[0]] == 'red':
@@ -22,6 +29,13 @@ def check_teams(kill_relationship):
 
 
 def search_and_add_teams(current_node, team, checked_nodes=[]):
+    """
+    Helper function for check_teams.
+    :param current_node:
+    :param team:
+    :param checked_nodes:
+    :return:
+    """
     if current_node not in checked_nodes:
         checked_nodes.append(current_node)
         for user in users_dict[current_node][0]:
@@ -39,6 +53,14 @@ def search_and_add_teams(current_node, team, checked_nodes=[]):
 
 
 def synchronize_teammates(current_node, opponent, checked_list):
+    """
+    Maintains an adjacency list of users like { user : [[list of teammates], [list of opponents]]
+    Recursively checks teammate relationships and ensures that all teammates are synchronized
+    :param current_node:
+    :param opponent:
+    :param checked_list:
+    :return:
+    """
     set_to_check = users_dict[current_node][0].copy()
     for i in set_to_check:
         if i not in checked_list:
@@ -49,6 +71,14 @@ def synchronize_teammates(current_node, opponent, checked_list):
 
 
 def synchronize_opponents(current_node, opponent, checked_list):
+    """
+    Maintains an adjacency list of users like { user : [[list of teammates], [list of opponents]]
+    Recursively checks opponent relationships and ensures that all opponents are synchronized
+    :param current_node:
+    :param opponent:
+    :param checked_list:
+    :return:
+    """
     set_to_check = users_dict[current_node][0].copy()
     for i in set_to_check:
         if i not in checked_list:
@@ -59,6 +89,11 @@ def synchronize_opponents(current_node, opponent, checked_list):
 
 
 def handle_player_interaction(hit_sentence):
+    """
+    Called when a player interaction is found.
+    :param hit_sentence:
+    :return:
+    """
     killer, victim = hit_sentence.split(' killed ')
     victim = victim.split(' with ')[0]
     print(killer, victim)
@@ -87,7 +122,6 @@ def handle_player_interaction(hit_sentence):
 
 
 teams_dict = {
-    'Limekiller': 'red'
 }
 users_dict = {
 }

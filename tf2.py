@@ -26,6 +26,20 @@ def locate_install():
     return console_path, autoexec_path
 
 
+def get_username():
+    """
+    This function searches the registry for the player's Steam name
+    :return: string
+    """
+    username = "Could not find username"
+    try:
+        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Software\\Valve\\Steam")
+        username = winreg.QueryValueEx(key, "LastGameNameUsed")[0]
+    except FileNotFoundError:
+        print(username)
+    return username
+
+
 def disable_tf2_chat(autoexec_path):
     """
     Searches the given autoexec file for a line that will disable the in-game text chat.
@@ -33,7 +47,6 @@ def disable_tf2_chat(autoexec_path):
     Takes a string autoexec_path representing the location of the autoexec config file,
     and returns nothing
     """
-
     line_found = False
     with open(autoexec_path, 'r') as f:
         for line in f:
